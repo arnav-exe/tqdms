@@ -8,7 +8,7 @@ from ..auto import tqdm as tqdm_auto
 from ..std import TqdmWarning
 
 __author__ = {"github.com/": ["casperdcl"]}
-__all__ = ['thread_map', 'process_map']
+__all__ = ['thread_map', 'process_map', 'interpreter_map']
 
 
 @contextmanager
@@ -32,10 +32,10 @@ def _min_map_len(iterables):
 
 def _executor_map(
     PoolExecutor, fn, *iterables, max_workers=None, timeout=None, chunksize=1, lock_name="",
-    tqdm_class=tqdm_auto, smoothing=0.0, **tqdm_kwargs
+    tqdm_class=tqdm_auto, smoothing=0.0, _share_lock=True, **tqdm_kwargs
 ):
     """
-    Implementation of `thread_map` and `process_map`.
+    Implementation of `thread_map`, `process_map` and `interpreter_map`.
 
     Parameters
     ----------
@@ -69,9 +69,10 @@ def _executor_map(
             kwargs['miniters'] = rough_max
             dynamic_miniters = True
     with ensure_lock(tqdm_class, lock_name=lock_name) as lk:
-        # share lock in case workers are already using `tqdm`
-        with PoolExecutor(max_workers=max_workers, initializer=tqdm_class.set_lock,
-                          initargs=(lk,), **pool_kwargs) as ex:
+        if _share_lock:
+            # share lock in case workers are already using `tqdm`
+            pool_kwargs.update(initializer=tqdm_class.set_lock, initargs=(lk,))
+        with PoolExecutor(max_workers=max_workers, **pool_kwargs) as ex:
             with tqdm_class(smoothing=smoothing, **kwargs) as pbar:
                 if dynamic_miniters is not None:
                     pbar.dynamic_miniters = True
@@ -107,10 +108,28 @@ def thread_map(fn, *iterables, **tqdm_kwargs):
     smoothing  : float, optional
         Passed to `tqdm_class`; the [default: 0] is average (due to erratic update frequency).
     lock_name  : str, optional
-        Member of `tqdm_class.get_lock()` to use [default: mp_lock].
+        Member of `tqdm_class.get_lock()` to use [default: ''].
     """
     from concurrent.futures import ThreadPoolExecutor
     return _executor_map(ThreadPoolExecutor, fn, *iterables, **tqdm_kwargs)
+
+
+def interpreter_map(fn, *iterables, **tqdm_kwargs):
+    """
+    Equivalent of `list(map(fn, *iterables))`
+    driven by `concurrent.futures.InterpreterPoolExecutor` (Python 3.14+).
+
+    Parameters
+    ----------
+    Same as `thread_map`.
+
+    Notes
+    -----
+    `fn`, its arguments, and its return values must be pickleable.
+    """
+    from concurrent.futures import InterpreterPoolExecutor
+    return _executor_map(InterpreterPoolExecutor, fn, *iterables, _share_lock=False,
+                         **tqdm_kwargs)
 
 
 def process_map(fn, *iterables, lock_name="mp_lock", **tqdm_kwargs):
