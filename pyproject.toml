@@ -5,8 +5,7 @@ build-backend = "setuptools.build_meta"
 [tool.setuptools_scm]
 
 [tool.setuptools.packages.find]
-where = ["."]
-include = ["tqdm"]
+include = ["tqdm", "tqdm.*"]
 
 [project.urls]
 homepage = "https://tqdm.github.io"
