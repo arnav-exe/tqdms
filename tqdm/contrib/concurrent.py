@@ -57,14 +57,15 @@ def _executor_map(
     for k in ('thread_name_prefix', 'max_tasks_per_child', 'mp_context'):
         if k in kwargs:
             pool_kwargs[k] = kwargs.pop(k)
-    if (
-        "miniters" not in kwargs
-        and "maxinterval" not in kwargs
-        and "mininterval" not in kwargs
-    ):  # Auto set miniters for better progress bar for parallel processes
-        total = kwargs["total"]
-        if total and total > max_workers:
-            kwargs["miniters"] = max_workers
+    if kwargs['total'] and 'miniters' not in kwargs:
+        try:
+            from os import process_cpu_count as cpu_count
+        except ImportError:
+            from os import cpu_count
+        # thread & process pools have different default workers, but we KISS here
+        rough_max = max_workers or min(32, (cpu_count() or 1) + 4)
+        if kwargs['total'] > rough_max:
+            kwargs['miniters'] = rough_max
     with ensure_lock(tqdm_class, lock_name=lock_name) as lk:
         # share lock in case workers are already using `tqdm`
         with PoolExecutor(max_workers=max_workers, initializer=tqdm_class.set_lock,
