@@ -93,6 +93,7 @@ def _get_interpreter_init(tqdm_class, lock_queue_id):
         f"tqdm_class = import_module({tqdm_class.__module__!r})\n"
         f"for name in {tqdm_class.__qualname__.split('.')!r}:\n"
         "    tqdm_class = getattr(tqdm_class, name)\n"
+        "tqdm_class.monitor_interval = 0\n"
         f"tqdm_class.set_lock(_InterpreterLock(interpreters.Queue({lock_queue_id!r})))")
     return exec, (code,)
 

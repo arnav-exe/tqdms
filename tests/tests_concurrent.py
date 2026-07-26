@@ -23,6 +23,7 @@ def check_lock(args):
     from tqdm.auto import tqdm
 
     held, checked, result, role = args
+    assert tqdm.monitor_interval == 0
     lock = tqdm.get_lock()
     if role == 'holder':
         with lock, lock:  # also check that the lock is reentrant
