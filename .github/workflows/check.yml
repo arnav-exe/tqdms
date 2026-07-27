@@ -16,10 +16,17 @@ jobs:
     - uses: actions/checkout@v7
     - uses: actions/setup-python@v6
       with: {python-version: '3.x'}
-    - run: pip install 'tox>=4'
+    - run: pip install 'tox>=4' build
     - run: tox
       env:
         TOXENV: ${{ matrix.TOXENV }}
+    - name: wheel size < 100kB
+      run: |
+        # millions of daily downloads so can't afford package bloat
+        python -m build -w
+        s=$(du -sb dist/*.whl | cut -f1)
+        echo wheel size: $s
+        (( $s < 102400 ))
   asvfull:
     if: (github.event_name == 'push' && startsWith(github.ref, 'refs/tags')) || github.event_name == 'schedule'
     name: Benchmark (Full)
