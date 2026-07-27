@@ -985,8 +985,7 @@ class tqdm(Comparable):
             except (TypeError, AttributeError):
                 total = None
         if total == float("inf"):
-            # Infinite iterations, behave same as unknown
-            total = None
+            total = None  # same as unknown
 
         if disable:
             self.iterable = iterable
@@ -1378,7 +1377,6 @@ class tqdm(Comparable):
         """
         self.n = 0
         if total is not None:
-            # infinite total behaves the same as unknown (#651), as in __init__
             self.total = None if total == float("inf") else total
         if self.disable:
             return
