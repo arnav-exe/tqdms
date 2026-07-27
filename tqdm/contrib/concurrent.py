@@ -32,7 +32,7 @@ def _min_map_len(iterables):
 
 def _executor_map(
     PoolExecutor, fn, *iterables, max_workers=None, timeout=None, chunksize=1, lock_name="",
-    tqdm_class=tqdm_auto, **tqdm_kwargs
+    tqdm_class=tqdm_auto, smoothing=0.0, **tqdm_kwargs
 ):
     """
     Implementation of `thread_map` and `process_map`.
@@ -57,11 +57,24 @@ def _executor_map(
     for k in ('thread_name_prefix', 'max_tasks_per_child', 'mp_context'):
         if k in kwargs:
             pool_kwargs[k] = kwargs.pop(k)
+    dynamic_miniters = None
+    if kwargs['total'] and 'miniters' not in kwargs:
+        try:
+            from os import process_cpu_count as cpu_count
+        except ImportError:
+            from os import cpu_count
+        # thread & process pools have different default workers, but we KISS here
+        rough_max = max_workers or min(32, (cpu_count() or 1) + 4)
+        if kwargs['total'] > rough_max:
+            kwargs['miniters'] = rough_max
+            dynamic_miniters = True
     with ensure_lock(tqdm_class, lock_name=lock_name) as lk:
         # share lock in case workers are already using `tqdm`
         with PoolExecutor(max_workers=max_workers, initializer=tqdm_class.set_lock,
                           initargs=(lk,), **pool_kwargs) as ex:
-            with tqdm_class(**kwargs) as pbar:
+            with tqdm_class(smoothing=smoothing, **kwargs) as pbar:
+                if dynamic_miniters is not None:
+                    pbar.dynamic_miniters = True
                 orisubmit = ex.submit
 
                 def patchsubmit(*args, **kwargs):
@@ -91,6 +104,8 @@ def thread_map(fn, *iterables, **tqdm_kwargs):
         Requires Python>=3.14 [default: None].
     tqdm_class  : optional
         `tqdm` class to use for bars [default: tqdm.auto.tqdm].
+    smoothing  : float, optional
+        Passed to `tqdm_class`; the [default: 0] is average (due to erratic update frequency).
     lock_name  : str, optional
         Member of `tqdm_class.get_lock()` to use [default: mp_lock].
     """
@@ -124,6 +139,8 @@ def process_map(fn, *iterables, lock_name="mp_lock", **tqdm_kwargs):
         Member of `tqdm_class.get_lock()` to use [default: mp_lock].
     tqdm_class  : optional
         `tqdm` class to use for bars [default: tqdm.auto.tqdm].
+    smoothing  : float, optional
+        Passed to `tqdm_class`; the [default: 0] is average (due to erratic update frequency).
     """
     from concurrent.futures import ProcessPoolExecutor
     if iterables and 'chunksize' not in tqdm_kwargs:
