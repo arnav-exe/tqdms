@@ -1378,7 +1378,8 @@ class tqdm(Comparable):
         """
         self.n = 0
         if total is not None:
-            self.total = total
+            # infinite total behaves the same as unknown (#651), as in __init__
+            self.total = None if total == float("inf") else total
         if self.disable:
             return
         self.last_print_n = 0

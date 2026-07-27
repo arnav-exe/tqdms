@@ -1144,6 +1144,19 @@ def test_reset():
         assert '| 10/12' in our_file.getvalue()
 
 
+def test_reset_inf():
+    """Test resetting a bar to an infinite total (#651)"""
+    with closing(StringIO()) as our_file:
+        with tqdm(total=10, file=our_file,
+                  miniters=1, mininterval=0, maxinterval=0) as t:
+            t.update(5)
+            t.reset(total=float("inf"))
+            t.update()
+            # same as tqdm(total=float("inf")): treated as unknown
+            assert t.total is None
+        assert '1it' in our_file.getvalue()
+
+
 def test_disabled_reset(capsys):
     """Test disabled reset"""
     with tqdm(total=10, disable=True) as t:
