@@ -4,9 +4,6 @@ Thin wrappers around `concurrent.futures`.
 import sys
 from contextlib import contextmanager
 from operator import length_hint
-from queue import Empty
-from threading import RLock, get_ident
-from time import monotonic
 
 from ..auto import tqdm as tqdm_auto
 from ..std import TqdmWarning
@@ -17,15 +14,19 @@ __all__ = ['thread_map', 'process_map', 'interpreter_map']
 
 class _InterpreterLock:
     """Reentrant lock backed by a cross-interpreter queue."""
+    from threading import get_ident
+    from time import monotonic as _time
 
     def __init__(self, queue):
+        from threading import RLock
         self._queue = queue
         self._lock = RLock()
         self._owner = None
         self._depth = 0
 
     def acquire(self, blocking=True, timeout=-1):
-        start = monotonic()
+        from queue import Empty
+        start = self._time()
         if timeout == -1:
             acquired = self._lock.acquire(blocking)
         else:
@@ -41,17 +42,17 @@ class _InterpreterLock:
             elif timeout == -1:
                 self._queue.get()
             else:
-                remaining = max(0, timeout - (monotonic() - start))
+                remaining = max(0, timeout - (self._time() - start))
                 self._queue.get(timeout=remaining)
         except Empty:
             self._lock.release()
             return False
-        self._owner = get_ident()
+        self._owner = self.get_ident()
         self._depth = 1
         return True
 
     def release(self):
-        if self._owner != get_ident():
+        if self._owner != self.get_ident():
             raise RuntimeError("cannot release un-acquired lock")
         self._depth -= 1
         if not self._depth:
