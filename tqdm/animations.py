@@ -14,8 +14,9 @@ import atexit
 import os
 import re
 import sys
+from colorsys import hsv_to_rgb
 from enum import Enum
-from math import cos, pi
+from math import cos, pi, sin
 from threading import Event, Lock, Thread
 from time import time
 from warnings import warn
@@ -170,6 +171,17 @@ def base_rgb(colour, default):
     return default
 
 
+def fill_glyphs(frac, width, charset):
+    """glyphs (list of `width` chars) of a `frac`-filled bar, and full-cell count"""
+    nsyms = len(charset) - 1
+    filled, part = divmod(int(frac * width * nsyms), nsyms)
+    res = [charset[-1]] * filled
+    if filled < width:
+        res.append(charset[part])
+        res.extend([charset[0]] * (width - filled - 1))
+    return res, filled
+
+
 class BarAnimation:
     """
     Base class for animated bar styles.
@@ -233,6 +245,299 @@ class AnimatedBar(Bar):
             return super()._paint(N_BARS, charset)
         return self.animation(self.frac, self.elapsed, N_BARS,
                               ascii=_is_ascii(charset), colour=self.colour)
+
+
+@register('wave')
+class Wave(BarAnimation):
+    """
+    Brightness wave rolling backwards along the filled region.
+
+    Backwards texture motion makes waits feel measurably shorter
+    (Harrison et al., CHI 2010). Monochrome terminals get a subtle
+    shade-glyph wave instead; ascii output stays static.
+    """
+    period = 1.6      # seconds per wavelength
+    wavelength = 14   # cells
+    base = (16, 170, 120)
+
+    def __call__(self, frac, elapsed, width, ascii=False, colour=None):  # noqa: B042
+        charset = Bar.ASCII if ascii else Bar.UTF
+        glyphs, filled = fill_glyphs(frac, width, charset)
+        phase = elapsed / self.period
+        if self.tier:
+            base = base_rgb(colour, self.base)
+            dim = blend(base, (0, 0, 0), 0.35)
+            bright = blend(base, (255, 255, 255), 0.4)
+            cells = []
+            for i, ch in enumerate(glyphs):
+                if ch == charset[0]:  # unfilled
+                    cells.append((ch, None))
+                else:
+                    w = wave01(i / self.wavelength + phase)
+                    cells.append((ch, blend(dim, bright, w)))
+            return compose(cells, self.tier)
+        if ascii:
+            return ''.join(glyphs)  # static: no colour, no safe glyph motion
+        shades = '▒▓█'  # monochrome: shade-glyph wave
+        return ''.join(
+            shades[int(wave01(i / self.wavelength + phase) * 2.999)]
+            if i < filled else ch for i, ch in enumerate(glyphs))
+
+
+@register('shimmer')
+class Shimmer(BarAnimation):
+    """
+    Bright gleam sweeping backwards over the filled region.
+
+    The skeleton-screen effect: a leftward, decelerating highlight
+    band (the empirically preferred motion; Harrison et al., CHI
+    2010). Monochrome terminals get a shade-glyph gleam; ascii output
+    stays static.
+    """
+    period = 1.8  # seconds per sweep
+    band = 3.0    # gleam half-width in cells
+    base = (96, 126, 218)
+
+    def __call__(self, frac, elapsed, width, ascii=False, colour=None):  # noqa: B042
+        charset = Bar.ASCII if ascii else Bar.UTF
+        glyphs, filled = fill_glyphs(frac, width, charset)
+        span = max(filled, 1)
+        # travel beyond both ends so the gleam enters and leaves smoothly
+        x = sweep(elapsed, self.period) * (span + 2 * self.band) - self.band
+        if self.tier:
+            base = base_rgb(colour, self.base)
+            gleam = blend(base, (255, 255, 255), 0.8)
+            cells = []
+            for i, ch in enumerate(glyphs):
+                if ch == charset[0]:  # unfilled
+                    cells.append((ch, None))
+                else:
+                    g = max(0.0, 1 - abs(i - x) / self.band)  # soft falloff
+                    cells.append((ch, blend(base, gleam, g * g)))
+            return compose(cells, self.tier)
+        if ascii:
+            return ''.join(glyphs)
+        return ''.join(  # monochrome: shade-glyph gleam
+            '▓' if i < filled and abs(i - x) < self.band * 0.7 else ch
+            for i, ch in enumerate(glyphs))
+
+
+@register('pulse')
+class Pulse(BarAnimation):
+    """
+    Whole-fill brightness breathing at ~1.1-1.25 Hz.
+
+    Pulse frequency rises slightly with progress: increasing-frequency
+    pulsation is the empirically preferred variant (Harrison et al.,
+    CHI 2010). Monochrome unicode gets a breathing edge cell; ascii
+    output stays static.
+    """
+    base = (36, 142, 232)
+
+    def __call__(self, frac, elapsed, width, ascii=False, colour=None):  # noqa: B042
+        charset = Bar.ASCII if ascii else Bar.UTF
+        glyphs, filled = fill_glyphs(frac, width, charset)
+        w = wave01(elapsed * (1.1 + 0.15 * frac))
+        if self.tier:
+            base = base_rgb(colour, self.base)
+            shade = blend(blend(base, (0, 0, 0), 0.25),
+                          blend(base, (255, 255, 255), 0.35), w)
+            cells = [(ch, None if ch == charset[0] else shade) for ch in glyphs]
+            return compose(cells, self.tier)
+        if ascii or not filled:
+            return ''.join(glyphs)
+        glyphs[filled - 1] = '█▓▒'[int(w * 2.999)]  # breathing edge cell
+        return ''.join(glyphs)
+
+
+@register('rainbow')
+class Rainbow(BarAnimation):
+    """
+    Hue-cycling colours flowing backwards along the filled region.
+
+    Needs colour support to mean anything: monochrome output is a
+    plain bar.
+    """
+    period = 3.0   # seconds per full hue rotation
+    stretch = 1.2  # hue rotations across the bar width
+
+    def __call__(self, frac, elapsed, width, ascii=False, colour=None):  # noqa: B042
+        charset = Bar.ASCII if ascii else Bar.UTF
+        glyphs, _ = fill_glyphs(frac, width, charset)
+        if not self.tier:
+            return ''.join(glyphs)
+        cells = []
+        for i, ch in enumerate(glyphs):
+            if ch == charset[0]:  # unfilled
+                cells.append((ch, None))
+            else:
+                h = (i * self.stretch / width + elapsed / self.period) % 1
+                cells.append(
+                    (ch, tuple(int(c * 255) for c in hsv_to_rgb(h, 0.85, 1))))
+        return compose(cells, self.tier)
+
+
+@register('fire')
+class Fire(BarAnimation):
+    """
+    Ember gradient with a flickering burning edge.
+
+    Deep red at the start of the fill through orange to a flickering
+    yellow tip (deterministic noise keyed to elapsed time). Monochrome
+    unicode gets shade-glyph flicker at the edge; ascii stays static.
+    """
+    interval = 0.07  # flicker looks livelier at ~14 fps
+    _RAMP = ((80, 8, 0), (178, 34, 0), (255, 106, 0), (255, 200, 40))
+
+    def __call__(self, frac, elapsed, width, ascii=False, colour=None):  # noqa: B042
+        charset = Bar.ASCII if ascii else Bar.UTF
+        glyphs, filled = fill_glyphs(frac, width, charset)
+        step = int(elapsed / self.interval)
+        span = max(filled, 1)
+        if self.tier:
+            cells = []
+            for i, ch in enumerate(glyphs):
+                if ch == charset[0]:  # unfilled
+                    cells.append((ch, None))
+                else:
+                    t = min(i / span, 1.0)
+                    j = min(int(t * 3), 2)
+                    rgb = blend(self._RAMP[j], self._RAMP[j + 1], t * 3 - j)
+                    d = span - i  # cells from the burning edge
+                    if d <= 3:  # flicker towards white-hot at the tip
+                        rgb = blend(rgb, (255, 240, 140),
+                                    noise(i, step) * (4 - d) / 4 * 0.7)
+                    cells.append((ch, rgb))
+            return compose(cells, self.tier)
+        if ascii or not filled:
+            return ''.join(glyphs)
+        for i in range(max(0, filled - 3), filled):  # monochrome flicker
+            if noise(i, step) > 0.5:
+                glyphs[i] = '▓▒'[int(noise(i + 7, step) * 1.999)]
+        return ''.join(glyphs)
+
+
+@register('spinner')
+class Spinner(BarAnimation):
+    """
+    Rotor spinning on the leading edge of the fill.
+
+    The classic braille activity rotor (a la cli-spinners "dots"),
+    fully glyph-based: animates on any terminal, `|/-\\` in ascii.
+    """
+    interval = 0.08
+    FRAMES = '⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
+    FRAMES_ASCII = '|/-\\'
+
+    def __call__(self, frac, elapsed, width, ascii=False, colour=None):  # noqa: B042
+        charset = Bar.ASCII if ascii else Bar.UTF
+        glyphs, filled = fill_glyphs(frac, width, charset)
+        if frac < 1 and filled < width:  # rotor rides the edge cell
+            frames = self.FRAMES_ASCII if ascii else self.FRAMES
+            glyphs[filled] = frames[int(elapsed / self.interval) % len(frames)]
+        res = ''.join(glyphs)
+        if self.tier and colour:
+            return colour + res + Bar.COLOUR_RESET
+        return res
+
+
+@register('comet')
+class Comet(BarAnimation):
+    """
+    A comet bouncing through the unfilled region, trail fading behind.
+
+    The fill stays a clean, static readout; the remaining space
+    carries the ambient motion (and shrinks as work completes). Fully
+    glyph-based with an ascii variant.
+    """
+    period = 2.6  # seconds per bounce cycle
+
+    def __call__(self, frac, elapsed, width, ascii=False, colour=None):  # noqa: B042
+        charset = Bar.ASCII if ascii else Bar.UTF
+        glyphs, filled = fill_glyphs(frac, width, charset)
+        start = filled + 1  # first cell past the partial edge
+        span = width - start
+        comet = {}
+        if span >= 3:
+            head, trail = ('O', 'o.') if ascii else ('●', '•·')
+            u = elapsed % self.period / self.period
+            x = start + int(round(wave01(u) * (span - 1)))  # smooth bounce
+            dirn = 1 if sin(2 * pi * u) >= 0 else -1
+            for k, (ch, rgb) in enumerate(((head, (255, 214, 90)),
+                                           (trail[0], (215, 150, 60)),
+                                           (trail[1], (150, 100, 45)))):
+                j = x - k * dirn  # trail behind the direction of travel
+                if start <= j < width:
+                    glyphs[j] = ch
+                    comet[j] = rgb
+        if not self.tier:
+            return ''.join(glyphs)
+        fill_rgb = base_rgb(colour, None) if colour else None
+        cells = []
+        for i, ch in enumerate(glyphs):
+            if i in comet:
+                cells.append((ch, comet[i]))
+            elif i <= filled and ch != charset[0]:
+                cells.append((ch, fill_rgb))
+            else:
+                cells.append((ch, None))
+        return compose(cells, self.tier)
+
+
+@register('ripple')
+class Ripple(BarAnimation):
+    """
+    A low wave rippling backwards through the unfilled region.
+
+    Phase-offset oscillators per cell (a la alive-progress waves): the
+    fill stays static and readable while the remaining space undulates
+    along the baseline. Fully glyph-based with an ascii variant.
+    """
+    period = 1.5
+    wavelength = 7
+    RAMP = ' ▁▂'
+    RAMP_ASCII = ' .:'
+
+    def __call__(self, frac, elapsed, width, ascii=False, colour=None):  # noqa: B042
+        charset = Bar.ASCII if ascii else Bar.UTF
+        glyphs, filled = fill_glyphs(frac, width, charset)
+        ramp = self.RAMP_ASCII if ascii else self.RAMP
+        for i in range(filled + 1, width):
+            w = wave01(i / self.wavelength + elapsed / self.period)
+            glyphs[i] = ramp[int(w * 2.999)]
+        res = ''.join(glyphs)
+        if self.tier and colour:
+            return colour + res + Bar.COLOUR_RESET
+        return res
+
+
+@register('pacman')
+class Pacman(BarAnimation):
+    """
+    The classic ILoveCandy easter egg: progress eats a trail of candy.
+
+    A chomping mouth rides the boundary with candy dots ahead and
+    emptiness behind; the mouth position is the progress fraction
+    (a la pacman's decade-old namesake option). Works everywhere:
+    plain ascii glyphs, coloured when the terminal allows.
+    """
+    interval = 0.12
+
+    def __call__(self, frac, elapsed, width, ascii=False, colour=None):  # noqa: B042
+        pos = min(int(frac * width), width - 1)
+        mouth = 'Cc'[int(elapsed / 0.25) % 2]
+        dot = 'o' if ascii else '·'
+        cells = []
+        for i in range(width):
+            if i == pos:
+                cells.append((mouth, (255, 210, 0)))
+            elif i > pos and i % 2 == 0:  # uneaten candy on a fixed grid
+                cells.append((dot, (222, 222, 222)))
+            else:
+                cells.append((' ', None))
+        if self.tier:
+            return compose(cells, self.tier)
+        return ''.join(ch for ch, _ in cells)
 
 
 class TAnimator(Thread):

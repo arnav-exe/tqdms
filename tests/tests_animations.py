@@ -1,17 +1,18 @@
-"""Tests for `tqdm.animations` core plumbing."""
+"""Tests for `tqdm.animations` core plumbing and styles."""
 import re
 from io import StringIO
 from time import sleep
 
-from pytest import warns
+from pytest import mark, warns
 
 from tqdm import TqdmWarning, tqdm
 from tqdm.animations import (
     C16, C256, NOCOLOUR, TRUECOLOUR, AnimatedBar, BarAnimation, TAnimator, base_rgb, blend,
     colour_tier, compose, noise, registry, resolve, sweep, wave01)
 from tqdm.std import Bar
+from tqdm.utils import RE_ANSI, disp_len
 
-RE_RATE = re.compile(r'[\d.]+(it/s|s/it)')
+RE_RATE = re.compile(r'[\d.?]+(it/s|s/it)')
 
 
 class FakeTTY(StringIO):
@@ -151,7 +152,8 @@ def test_no_animation_output_unchanged():
         out = StringIO()
         with tqdm(total=10, file=out, mininterval=0, **kwargs) as t:
             t.update(5)
-        outs.append(RE_RATE.sub('R', out.getvalue()))
+        # rates (and the padding overwriting them) are timing-dependent
+        outs.append(re.sub(r' +(?=[\r\n]|$)', '', RE_RATE.sub('R', out.getvalue())))
     assert outs[0] == outs[1]
 
 
@@ -169,7 +171,7 @@ def test_animator_thread():
     animator = TAnimator._animator
     assert animator is not None and animator.is_alive()
     before = len(calls)
-    sleep(0.45)  # no update() calls: frames must still advance
+    sleep(0.6)  # no update() calls: frames must still advance
     assert len(calls) - before >= 2
     t.close()
     for _ in range(100):  # thread retires once no animated bars remain
@@ -186,3 +188,134 @@ def test_animator_respects_delay():
     sleep(0.35)
     t.close()
     assert out.getvalue() == ''
+
+
+@mark.parametrize("name", sorted(registry))
+def test_animation_invariants(name):
+    """Test every style renders exact width at all tiers/fracs/times"""
+    anim = registry[name]()
+    for tier in (NOCOLOUR, C16, C256, TRUECOLOUR):
+        anim.tier = tier
+        for is_ascii in (False, True):
+            for frac in (0, 0.01, 1 / 3, 0.5, 0.97, 1):
+                for elapsed in (0, 0.05, 0.13, 1.7, 33.3, 12345.6):
+                    for width in (1, 2, 3, 10, 47):
+                        res = anim(frac, elapsed, width, ascii=is_ascii)
+                        ctx = (name, tier, is_ascii, frac, elapsed, width, res)
+                        assert disp_len(res) == width, ctx
+                        assert '\n' not in res and '\r' not in res, ctx
+                        if is_ascii:
+                            assert all(ord(c) < 256
+                                       for c in RE_ANSI.sub('', res)), ctx
+                        if tier == NOCOLOUR:
+                            assert '\x1b' not in res, ctx
+                        else:
+                            escapes = RE_ANSI.findall(res)
+                            if escapes:  # no colour state may leak out
+                                assert escapes[-1] == Bar.COLOUR_RESET, ctx
+
+
+@mark.parametrize("name", sorted(registry))
+def test_animation_in_tqdm(name):
+    """Test every style through a real bar without errors"""
+    out = StringIO()
+    with tqdm(total=10, file=out, animation=name, mininterval=0, ncols=60) as t:
+        for _ in range(10):
+            t.update()
+    assert '10/10' in out.getvalue()
+
+
+def test_shimmer():
+    """Test the gleam sweeps backwards (leftward) over the fill"""
+    anim = registry['shimmer']()
+    anim.tier = TRUECOLOUR
+    a = anim(1, 0.05, 30)
+    b = anim(1, 0.6, 30)
+    assert a != b
+    anim.tier = NOCOLOUR  # monochrome gleam still animates
+    frames = {anim(1, t / 10, 30) for t in range(12)}
+    assert len(frames) > 3
+
+
+def test_pulse():
+    """Test breathing brightness varies with time and speeds up"""
+    anim = registry['pulse']()
+    anim.tier = TRUECOLOUR
+    assert anim(0.5, 0.1, 30) != anim(0.5, 0.4, 30)
+    anim.tier = NOCOLOUR  # breathing edge cell
+    frames = {anim(0.5, t / 5, 30) for t in range(10)}
+    assert len(frames) > 1
+
+
+def test_rainbow():
+    """Test many hues at truecolour, plain bar when monochrome"""
+    anim = registry['rainbow']()
+    anim.tier = TRUECOLOUR
+    res = anim(1, 0, 30)
+    assert len(set(RE_ANSI.findall(res))) > 8  # many distinct colours
+    assert anim(1, 0, 30) != anim(1, 0.9, 30)
+    anim.tier = NOCOLOUR
+    assert anim(0.5, 0, 10) == format(Bar(0.5, 10))
+
+
+def test_fire():
+    """Test flicker at the edge varies with time in colour and mono"""
+    anim = registry['fire']()
+    anim.tier = TRUECOLOUR
+    assert anim(0.7, 0.0, 30) != anim(0.7, 0.2, 30)
+    anim.tier = NOCOLOUR
+    frames = {anim(0.7, t * 0.07, 30) for t in range(8)}
+    assert len(frames) > 2
+
+
+def test_spinner():
+    """Test the rotor spins at every tier, and rests at 100%"""
+    anim = registry['spinner']()
+    for tier, is_ascii in ((NOCOLOUR, False), (NOCOLOUR, True)):
+        anim.tier = tier
+        frames = {anim(0.5, t * 0.08, 20, ascii=is_ascii) for t in range(4)}
+        assert len(frames) == 4
+        assert anim(1, 0, 20, ascii=is_ascii) == anim(1, 5, 20, ascii=is_ascii)
+
+
+def test_comet():
+    """Test the comet bounces through the unfilled region"""
+    anim = registry['comet']()
+    anim.tier = NOCOLOUR
+    positions = {anim(0.3, t * 0.4, 30).index('●') for t in range(6)}
+    assert len(positions) > 3  # it moves
+    assert min(positions) >= 9  # never inside the fill
+    assert '#' not in anim(0.3, 0, 30, ascii=True)[10:]
+    assert 'O' in anim(0.3, 0, 30, ascii=True)
+
+
+def test_ripple():
+    """Test the unfilled region undulates while the fill stays put"""
+    anim = registry['ripple']()
+    anim.tier = NOCOLOUR
+    a, b = anim(0.5, 0.0, 30), anim(0.5, 0.4, 30)
+    assert a != b
+    assert a[:15] == b[:15]  # fill untouched
+    assert set(anim(0.5, 0.2, 30, ascii=True)[16:]) <= set(' .:')
+
+
+def test_pacman():
+    """Test chomping mouth position tracks the fraction"""
+    anim = registry['pacman']()
+    anim.tier = NOCOLOUR
+    res = anim(0.5, 0.0, 20, ascii=True)
+    assert res.index('C') == 10
+    assert 'o' in res[11:] and 'o' not in res[:10]  # candy only ahead
+    assert 'c' in anim(0.5, 0.3, 20, ascii=True)  # mouth chomps
+    assert anim(1, 0.0, 20, ascii=True).index('C') == 19
+
+
+def test_wave():
+    """Test the wave style animates over time (colour and monochrome)"""
+    anim = registry['wave']()
+    for tier in (TRUECOLOUR, C16):
+        anim.tier = tier
+        assert anim(0.5, 0.0, 30) != anim(0.5, 0.4, 30)
+    anim.tier = NOCOLOUR
+    assert anim(0.5, 0.0, 30) != anim(0.5, 0.4, 30)  # shade-glyph wave
+    assert anim(0.5, 0.0, 30, ascii=True) == anim(0.5, 0.4, 30, ascii=True)

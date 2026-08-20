@@ -483,6 +483,11 @@ Parameters
     Bar colour (e.g. 'green', '#00ff00').
 * delay  : float, optional  
     Don't display until [default: 0] seconds have elapsed.
+* animation  : str, optional  
+    Name of an animated bar style (e.g. 'wave', 'pulse',
+    'rainbow'). Requires ``total``. Colours and glyphs degrade
+    automatically to match terminal support. See
+    ``tqdm.animations.Animation`` for all styles [default: None].
 
 Extra CLI Options
 ~~~~~~~~~~~~~~~~~
@@ -811,6 +816,32 @@ Note that ``{bar}`` also supports a format specifier ``[width][type]``.
 
 This means a fixed bar with right-justified text may be created by using:
 ``bar_format="{l_bar}{bar:10}|{bar:-10b}right-justified"``
+
+Animated styles
+~~~~~~~~~~~~~~~
+
+The ``{bar}`` itself can be animated by passing ``animation=`` (also
+available via the CLI as ``--animation`` and the ``TQDM_ANIMATION``
+environment variable):
+
+.. code:: python
+
+    from tqdm import tqdm
+    from tqdm.animations import Animation
+
+    for _ in tqdm(range(100), animation="wave"):
+        ...
+    for _ in tqdm(range(100), animation=Animation.PACMAN):
+        ...
+
+Available styles: ``wave``, ``shimmer``, ``pulse``, ``rainbow``,
+``fire``, ``spinner``, ``ripple``, ``comet`` and ``pacman``.
+Stats (rate, ETA, ``postfix``, etc.) are unaffected, and a background
+thread keeps the animation moving even between slow iterations.
+Colours and glyphs degrade automatically (truecolour, 256, 16, plain;
+unicode or ascii) to suit the terminal; piping output disables the
+thread and colours as usual. Try them all with
+``python examples/animations_demo.py``.
 
 Nested progress bars
 ~~~~~~~~~~~~~~~~~~~~
