@@ -153,7 +153,7 @@ def test_no_animation_output_unchanged():
         with tqdm(total=10, file=out, mininterval=0, **kwargs) as t:
             t.update(5)
         # rates (and the padding overwriting them) are timing-dependent
-        outs.append(re.sub(' +', ' ', RE_RATE.sub('R', out.getvalue())))
+        outs.append(re.sub(r' +(?=[\r\n]|$)', '', RE_RATE.sub('R', out.getvalue())))
     assert outs[0] == outs[1]
 
 
