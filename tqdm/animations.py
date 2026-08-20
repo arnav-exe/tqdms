@@ -460,6 +460,46 @@ class Ocean(BarAnimation):
         return ''.join(glyphs)
 
 
+@register('aurora')
+class Aurora(BarAnimation):
+    """
+    Slow curtains of northern-lights colour drifting over the fill.
+
+    Auroral emission colours (oxygen green flanked by teal and the
+    violet N2+ fringe) drift backwards in two incommensurate layers,
+    everything under ~0.2 Hz: the effortless-attention register that
+    makes real aurora (and clouds, and embers) restorative to watch
+    (Kaplan's soft fascination). Monochrome unicode gets a subtle
+    two-shade drift; ascii output stays static.
+    """
+    interval = 0.12
+    TEAL, GREEN, VIOLET = (45, 185, 165), (70, 225, 130), (155, 85, 205)
+    DIM = (18, 60, 45)  # night-sky floor beneath the curtains
+
+    def __call__(self, frac, elapsed, width, ascii=False, colour=None):  # noqa: B042
+        charset = Bar.ASCII if ascii else Bar.UTF
+        glyphs, filled = fill_glyphs(frac, width, charset)
+        if not self.tier:
+            if ascii:
+                return ''.join(glyphs)
+            for i in range(filled):  # monochrome: two-shade drift
+                if (0.55 * wave01(i / 11 + elapsed / 9.1)
+                        + 0.45 * wave01(i / 23 + elapsed / 13.7)) < 0.4:
+                    glyphs[i] = '▓'
+            return ''.join(glyphs)
+        cells = []
+        for i, ch in enumerate(glyphs):
+            if ch == charset[0]:
+                cells.append((ch, None))
+                continue
+            curtain = (0.55 * wave01(i / 11 + elapsed / 9.1)
+                       + 0.45 * wave01(i / 23 + elapsed / 13.7))
+            hue = ramp((self.TEAL, self.GREEN, self.VIOLET),
+                       wave01(i / 29 + elapsed / 21.3))
+            cells.append((ch, blend(self.DIM, hue, 0.25 + 0.75 * curtain)))
+        return compose(cells, self.tier)
+
+
 @register('pacman')
 class Pacman(BarAnimation):
     """

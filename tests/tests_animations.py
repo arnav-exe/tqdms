@@ -277,6 +277,19 @@ def test_ocean():
     assert anim(0.5, 0.0, 30, ascii=True) == anim(0.5, 0.7, 30, ascii=True)
 
 
+def test_aurora():
+    """Test slow drifting curtains in colour and monochrome"""
+    anim = registry['aurora']()
+    anim.tier = TRUECOLOUR
+    assert anim(1, 0.0, 30) != anim(1, 1.0, 30)
+    assert len(set(RE_ANSI.findall(anim(1, 0, 30)))) > 4  # many hues
+    anim.tier = NOCOLOUR
+    a, b = anim(1, 0.0, 30), anim(1, 5.0, 30)
+    assert a != b and set(a) <= {'█', '▓'}  # two-shade drift
+    assert anim(0.5, 0.0, 30)[15:] == ' ' * 15  # unfilled untouched
+    assert anim(0.5, 0.0, 30, ascii=True) == anim(0.5, 3.0, 30, ascii=True)
+
+
 def test_pacman():
     """Test chomping mouth position tracks the fraction"""
     anim = registry['pacman']()
