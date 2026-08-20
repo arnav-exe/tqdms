@@ -199,6 +199,10 @@ class Bar:
             charset = self.charset
             N_BARS = self.default_len
 
+        return self._paint(N_BARS, charset)
+
+    def _paint(self, N_BARS, charset):
+        """Render `N_BARS` cells of `charset` glyphs (overridable hook)."""
         nsyms = len(charset) - 1
         bar_length, frac_bar_length = divmod(int(self.frac * N_BARS * nsyms), nsyms)
 
