@@ -10,18 +10,22 @@ Styles are looked up in `registry` by name; see `Animation` for valid
 names. Rendering degrades gracefully depending on the output terminal:
 truecolour -> 256 -> 16 colours -> plain glyphs, and unicode -> ascii.
 """
+import atexit
 import os
 import re
 import sys
 from enum import Enum
 from math import cos, pi
+from threading import Event, Lock, Thread
+from time import time
 from warnings import warn
+from weakref import WeakSet
 
 from .std import Bar, TqdmWarning
 from .utils import IS_WIN, _is_ascii
 
-__all__ = ['Animation', 'AnimatedBar', 'BarAnimation', 'registry', 'resolve',
-           'colour_tier', 'NOCOLOUR', 'C16', 'C256', 'TRUECOLOUR']
+__all__ = ['Animation', 'AnimatedBar', 'BarAnimation', 'TAnimator', 'registry',
+           'resolve', 'colour_tier', 'NOCOLOUR', 'C16', 'C256', 'TRUECOLOUR']
 
 # colour capability tiers (comparable: higher supports more colours)
 NOCOLOUR, C16, C256, TRUECOLOUR = 0, 16, 256, 1 << 24
@@ -229,6 +233,70 @@ class AnimatedBar(Bar):
             return super()._paint(N_BARS, charset)
         return self.animation(self.frac, self.elapsed, N_BARS,
                               ascii=_is_ascii(charset), colour=self.colour)
+
+
+class TAnimator(Thread):
+    """
+    Daemon thread refreshing animated bars between iterations.
+
+    Keeps animations moving even when the wrapped iterable is slow.
+    Started on demand for bars created with `animation=` on a tty;
+    exits once no such bars remain.
+    """
+    _lock = Lock()
+    _animator = None  # singleton
+    _test = {}  # internal vars for unit testing
+
+    def __init__(self, tqdm_cls):
+        Thread.__init__(self, name="tqdm_animator")
+        self.daemon = True  # kill thread when main killed (KeyboardInterrupt)
+        self.tqdm_cls = tqdm_cls
+        self.instances = WeakSet()
+        self._time = self._test.get("time", time)
+        self.was_killed = self._test.get("Event", Event)()
+        atexit.register(self.was_killed.set)
+        self.start()
+
+    @classmethod
+    def register(cls, instance):
+        """Ensure a running animator thread and register `instance`."""
+        with cls._lock:
+            animator = cls._animator
+            if animator is None or animator.was_killed.is_set():
+                try:
+                    animator = cls._animator = cls(type(instance))
+                except Exception:  # pragma: no cover
+                    return  # no thread support: animate passively on updates
+            animator.instances.add(instance)
+
+    def run(self):
+        interval = 0.1
+        while True:
+            self.was_killed.wait(interval)
+            if self.was_killed.is_set():
+                return
+            interval = 0.1
+            with self.tqdm_cls.get_lock():
+                # copy to avoid set-changed-during-iteration races
+                for instance in self.instances.copy():
+                    if self.was_killed.is_set():
+                        return
+                    if getattr(instance, 'disable', False):
+                        self.instances.discard(instance)  # closed
+                    elif hasattr(instance, 'start_t'):
+                        animation = getattr(instance, '_animation', None)
+                        if animation is not None:
+                            interval = min(interval, animation.interval)
+                            if instance._time() >= instance.start_t + instance.delay:
+                                instance.refresh(nolock=True)
+                    del instance
+            if not self.instances:
+                with TAnimator._lock:
+                    if not self.instances:  # nothing new registered: retire
+                        if TAnimator._animator is self:
+                            TAnimator._animator = None
+                        self.was_killed.set()
+                        return
 
 
 Animation = Enum('Animation', [(name.upper(), name) for name in registry], type=str)

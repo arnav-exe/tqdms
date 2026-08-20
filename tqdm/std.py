@@ -1129,6 +1129,15 @@ class tqdm(Comparable):
         # NB: Avoid race conditions by setting start_t at the very end of init
         self.start_t = self.last_print_t
 
+        if self._animation is not None and not gui:
+            try:
+                animate = file.isatty()
+            except (AttributeError, OSError, ValueError):  # pragma: no cover
+                animate = False
+            if animate:  # refresh between iterations (not when piped)
+                from .animations import TAnimator
+                TAnimator.register(self)
+
     def __bool__(self):
         if self.total is not None:
             return self.total > 0
