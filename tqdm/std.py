@@ -199,6 +199,10 @@ class Bar:
             charset = self.charset
             N_BARS = self.default_len
 
+        return self._paint(N_BARS, charset)
+
+    def _paint(self, N_BARS, charset):
+        """Render `N_BARS` cells of `charset` glyphs (overridable hook)."""
         nsyms = len(charset) - 1
         bar_length, frac_bar_length = divmod(int(self.frac * N_BARS * nsyms), nsyms)
 
@@ -350,6 +354,11 @@ class tqdm(Comparable):
         Bar colour (e.g. 'green', '#00ff00').
     delay  : float, optional
         Don't display until [default: 0] seconds have elapsed.
+    animation  : str, optional
+        Name of an animated bar style (e.g. 'wave', 'pulse',
+        'rainbow'). Requires `total`. Colours and glyphs degrade
+        automatically to match terminal support. See
+        `tqdm.animations.Animation` for all styles [default: None].
     gui  : bool, optional
         WARNING: internal parameter - do not use.
         Use tqdm.gui.tqdm(...) instead. If set, will attempt to use
@@ -523,6 +532,8 @@ class tqdm(Comparable):
             The initial counter value [default: 0].
         colour  : str, optional
             Bar colour (e.g. 'green', '#00ff00').
+        animation  : tqdm.animations.BarAnimation, optional
+            Animated style painting `{bar}` [default: None].
 
         Returns
         -------
@@ -633,10 +644,16 @@ class tqdm(Comparable):
                 return disp_trim(nobar, ncols) if ncols else nobar
 
             # Formatting progress bar space available for bar's display
-            full_bar = Bar(frac,
-                           max(1, ncols - disp_len(nobar)) if ncols else 10,
-                           charset=Bar.ASCII if ascii is True else ascii or Bar.UTF,
-                           colour=colour)
+            animation = extra_kwargs.get('animation')
+            if animation:
+                from .animations import AnimatedBar as _Bar
+                bar_kwargs = {'animation': animation, 'elapsed': elapsed}
+            else:
+                _Bar, bar_kwargs = Bar, {}
+            full_bar = _Bar(frac,
+                            max(1, ncols - disp_len(nobar)) if ncols else 10,
+                            charset=Bar.ASCII if ascii is True else ascii or Bar.UTF,
+                            colour=colour, **bar_kwargs)
             if not _is_ascii(full_bar.charset) and _is_ascii(bar_format):
                 bar_format = str(bar_format)
             res = bar_format.format(bar=full_bar, **format_dict)
@@ -962,8 +979,8 @@ class tqdm(Comparable):
                  ascii=None,  # pylint: disable=redefined-builtin
                  disable=False, unit='it', unit_scale=False, dynamic_ncols=False, smoothing=0.3,
                  bar_format=None, initial=0, position=None, postfix=None, unit_divisor=1000,
-                 write_bytes=False, lock_args=None, nrows=None, colour=None, delay=0.0, gui=False,
-                 **kwargs):
+                 write_bytes=False, lock_args=None, nrows=None, colour=None, delay=0.0,
+                 animation=None, gui=False, **kwargs):
         """see tqdm.tqdm for arguments"""
         if file is None:
             file = sys.stderr
@@ -1079,6 +1096,11 @@ class tqdm(Comparable):
         self.bar_format = bar_format
         self.postfix = None
         self.colour = colour
+        if animation:
+            from .animations import resolve as _resolve_animation
+            self._animation = _resolve_animation(animation, file)
+        else:
+            self._animation = None
         self._time = time
         if postfix:
             try:
@@ -1106,6 +1128,15 @@ class tqdm(Comparable):
         self.last_print_t = self._time()
         # NB: Avoid race conditions by setting start_t at the very end of init
         self.start_t = self.last_print_t
+
+        if self._animation is not None and not gui:
+            try:
+                animate = file.isatty()
+            except (AttributeError, OSError, ValueError):  # pragma: no cover
+                animate = False
+            if animate:  # refresh between iterations (not when piped)
+                from .animations import TAnimator
+                TAnimator.register(self)
 
     def __bool__(self):
         if self.total is not None:
@@ -1467,7 +1498,7 @@ class tqdm(Comparable):
             'rate': self._ema_dn() / self._ema_dt() if self._ema_dt() else None,
             'bar_format': self.bar_format, 'postfix': self.postfix,
             'unit_divisor': self.unit_divisor, 'initial': self.initial,
-            'colour': self.colour}
+            'colour': self.colour, 'animation': getattr(self, '_animation', None)}
 
     def display(self, msg=None, pos=None):
         """
