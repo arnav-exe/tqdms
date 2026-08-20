@@ -417,6 +417,30 @@ class Fire(BarAnimation):
         return ''.join(glyphs)
 
 
+@register('spinner')
+class Spinner(BarAnimation):
+    """
+    Rotor spinning on the leading edge of the fill.
+
+    The classic braille activity rotor (a la cli-spinners "dots"),
+    fully glyph-based: animates on any terminal, `|/-\\` in ascii.
+    """
+    interval = 0.08
+    FRAMES = '⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
+    FRAMES_ASCII = '|/-\\'
+
+    def __call__(self, frac, elapsed, width, ascii=False, colour=None):  # noqa: B042
+        charset = Bar.ASCII if ascii else Bar.UTF
+        glyphs, filled = fill_glyphs(frac, width, charset)
+        if frac < 1 and filled < width:  # rotor rides the edge cell
+            frames = self.FRAMES_ASCII if ascii else self.FRAMES
+            glyphs[filled] = frames[int(elapsed / self.interval) % len(frames)]
+        res = ''.join(glyphs)
+        if self.tier and colour:
+            return colour + res + Bar.COLOUR_RESET
+        return res
+
+
 class TAnimator(Thread):
     """
     Daemon thread refreshing animated bars between iterations.

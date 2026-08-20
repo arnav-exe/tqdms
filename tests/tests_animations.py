@@ -268,6 +268,16 @@ def test_fire():
     assert len(frames) > 2
 
 
+def test_spinner():
+    """Test the rotor spins at every tier, and rests at 100%"""
+    anim = registry['spinner']()
+    for tier, is_ascii in ((NOCOLOUR, False), (NOCOLOUR, True)):
+        anim.tier = tier
+        frames = {anim(0.5, t * 0.08, 20, ascii=is_ascii) for t in range(4)}
+        assert len(frames) == 4
+        assert anim(1, 0, 20, ascii=is_ascii) == anim(1, 5, 20, ascii=is_ascii)
+
+
 def test_wave():
     """Test the wave style animates over time (colour and monochrome)"""
     anim = registry['wave']()
