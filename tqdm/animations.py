@@ -389,33 +389,6 @@ class Fire(BarAnimation):
         return ''.join(glyphs)
 
 
-@register('ripple')
-class Ripple(BarAnimation):
-    """
-    A low wave rippling backwards through the unfilled region.
-
-    Phase-offset oscillators per cell (a la alive-progress waves): the
-    fill stays static and readable while the remaining space undulates
-    along the baseline. Fully glyph-based with an ascii variant.
-    """
-    period = 1.5
-    wavelength = 7
-    RAMP = ' ▁▂'
-    RAMP_ASCII = ' .:'
-
-    def __call__(self, frac, elapsed, width, ascii=False, colour=None):  # noqa: B042
-        charset = Bar.ASCII if ascii else Bar.UTF
-        glyphs, filled = fill_glyphs(frac, width, charset)
-        ramp = self.RAMP_ASCII if ascii else self.RAMP
-        for i in range(filled + 1, width):
-            w = wave01(i / self.wavelength + elapsed / self.period)
-            glyphs[i] = ramp[int(w * 2.999)]
-        res = ''.join(glyphs)
-        if self.tier and colour:
-            return colour + res + Bar.COLOUR_RESET
-        return res
-
-
 @register('pacman')
 class Pacman(BarAnimation):
     """
