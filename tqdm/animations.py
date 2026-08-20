@@ -159,6 +159,26 @@ def noise(i, step):
     return (n >> 8) / 16777216.0
 
 
+def swell(x, rise=0.35):
+    """
+    Asymmetric 0 -> 1 -> 0 envelope over phase `x` (cycles).
+
+    Fast smooth rise (peaking at `rise`), slow smooth fall: the
+    attack/decay asymmetry of natural light events (glints, embers).
+    """
+    u = x % 1
+    if u < rise:
+        return 0.5 - 0.5 * cos(pi * u / rise)
+    return 0.5 + 0.5 * cos(pi * (u - rise) / (1 - rise))
+
+
+def ramp(stops, t):
+    """linear interpolation through a sequence of rgb `stops`, `t` in [0, 1]"""
+    t = min(max(t, 0.0), 1.0) * (len(stops) - 1)
+    j = min(int(t), len(stops) - 2)
+    return blend(stops[j], stops[j + 1], t - j)
+
+
 def base_rgb(colour, default):
     """rgb tuple from a `Bar`-resolved ANSI `colour` code (or `default`)"""
     if colour:

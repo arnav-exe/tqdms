@@ -8,7 +8,7 @@ from pytest import mark, warns
 from tqdm import TqdmWarning, tqdm
 from tqdm.animations import (
     C16, C256, NOCOLOUR, TRUECOLOUR, AnimatedBar, BarAnimation, TAnimator, base_rgb, blend,
-    colour_tier, compose, noise, registry, resolve, sweep, wave01)
+    colour_tier, compose, noise, ramp, registry, resolve, sweep, swell, wave01)
 from tqdm.std import Bar
 from tqdm.utils import RE_ANSI, disp_len
 
@@ -95,6 +95,10 @@ def test_helpers():
     vals = {noise(i, s) for i in range(9) for s in range(9)}
     assert all(0 <= v < 1 for v in vals) and len(vals) > 70  # deterministic spread
     assert noise(3, 7) == noise(3, 7)
+    assert swell(0) < 1e-9 and abs(swell(0.35) - 1) < 1e-9  # peak at `rise`
+    assert swell(0.9) < swell(0.5)  # fast attack, slow fall
+    assert ramp(((0, 0, 0), (100, 200, 50)), 0.5) == (50, 100, 25)
+    assert ramp(((0, 0, 0), (8, 8, 8), (100, 200, 50)), 1) == (100, 200, 50)
 
 
 def test_base_rgb():
