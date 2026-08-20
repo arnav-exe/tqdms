@@ -7,7 +7,7 @@ from pytest import mark, warns
 
 from tqdm import TqdmWarning, tqdm
 from tqdm.animations import (
-    C16, C256, NOCOLOUR, TRUECOLOUR, AnimatedBar, BarAnimation, TAnimator, base_rgb, blend,
+    C16, C256, NOCOLOUR, RE_RGB, TRUECOLOUR, AnimatedBar, BarAnimation, TAnimator, base_rgb, blend,
     colour_tier, compose, noise, ramp, registry, resolve, sweep, swell, wave01)
 from tqdm.std import Bar
 from tqdm.utils import RE_ANSI, disp_len
@@ -260,6 +260,21 @@ def test_fire():
     anim.tier = NOCOLOUR
     frames = {anim(0.7, t * 0.07, 30) for t in range(8)}
     assert len(frames) > 2
+
+
+def test_ocean():
+    """Test layered swells, sun glints and the lapping shoreline"""
+    anim = registry['ocean']()
+    anim.tier = TRUECOLOUR
+    assert anim(0.6, 0.0, 30) != anim(0.6, 0.4, 30)
+    rgbs = {m for t in range(40) for m in RE_RGB.findall(anim(1, t * 0.1, 30))}
+    assert any(int(r) > 200 for r, _, _ in rgbs)  # foam glints appear
+    assert RE_ANSI.sub('', anim(0, 0.5, 30))[0] == '·'  # lapping from 0%
+    anim.tier = NOCOLOUR
+    frames = {anim(1, t * 0.1, 30) for t in range(40)}
+    assert len(frames) > 2  # mono foam flecks come and go
+    assert set(''.join(frames)) <= {'█', '▒'}
+    assert anim(0.5, 0.0, 30, ascii=True) == anim(0.5, 0.7, 30, ascii=True)
 
 
 def test_pacman():

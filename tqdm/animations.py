@@ -409,6 +409,57 @@ class Fire(BarAnimation):
         return ''.join(glyphs)
 
 
+@register('ocean')
+class Ocean(BarAnimation):
+    """
+    Deep water: layered swells with sunlight glinting off the fill.
+
+    Two backwards-travelling swells at incommensurate periods (real
+    swell arrives every 8-12s; coprime layering keeps the loop from
+    ever visibly repeating) over a depth gradient, plus sparse
+    foam-white glints - the statistics of real sun-glitter (Cox &
+    Munk 1954), denser as the bar nears done. The shoreline cell laps
+    gently so the bar is alive from the first frame. Monochrome
+    unicode gets sparse shade-glyph flecks; ascii output stays static.
+    """
+    glint_life = 0.35  # seconds per glint (fast attack, slow fade)
+    DEEP, CREST, FOAM = (8, 64, 112), (56, 160, 190), (225, 245, 250)
+
+    def __call__(self, frac, elapsed, width, ascii=False, colour=None):  # noqa: B042
+        charset = Bar.ASCII if ascii else Bar.UTF
+        glyphs, filled = fill_glyphs(frac, width, charset)
+        lap = min(filled, width - 1)
+        if glyphs[lap] == charset[0] and lap:
+            lap -= 1  # shoreline sits on the last painted cell
+        if self.tier:
+            thresh = 0.97 - 0.03 * frac  # glints gather towards done
+            cells = []
+            for i, ch in enumerate(glyphs):
+                if ch == charset[0] and i != lap:
+                    cells.append((ch, None))
+                    continue
+                w = (0.6 * wave01(i / 17 + elapsed / 8.5)
+                     + 0.4 * wave01(i / 6.1 + elapsed / 3.7))
+                rgb = blend(self.DEEP, self.CREST, w)
+                if i == lap:  # water lapping at the leading edge
+                    rgb = blend(rgb, self.FOAM,
+                                0.35 * swell(elapsed / 2.6, 0.45))
+                    if ch == charset[0]:
+                        ch = '·' if not ascii else '.'
+                ph = elapsed / self.glint_life + 7.9 * noise(i, -1)
+                if noise(i, int(ph)) > thresh:  # sun glint
+                    rgb = blend(rgb, self.FOAM, swell(ph, 0.3))
+                cells.append((ch, rgb))
+            return compose(cells, self.tier)
+        if ascii:
+            return ''.join(glyphs)
+        for i in range(filled):  # monochrome: sparse foam flecks
+            ph = elapsed / self.glint_life + 7.9 * noise(i, -1)
+            if noise(i, int(ph)) > 0.95 and swell(ph, 0.3) > 0.45:
+                glyphs[i] = '▒'
+        return ''.join(glyphs)
+
+
 @register('pacman')
 class Pacman(BarAnimation):
     """
