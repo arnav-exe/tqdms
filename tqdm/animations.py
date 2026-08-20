@@ -377,6 +377,46 @@ class Rainbow(BarAnimation):
         return compose(cells, self.tier)
 
 
+@register('fire')
+class Fire(BarAnimation):
+    """
+    Ember gradient with a flickering burning edge.
+
+    Deep red at the start of the fill through orange to a flickering
+    yellow tip (deterministic noise keyed to elapsed time). Monochrome
+    unicode gets shade-glyph flicker at the edge; ascii stays static.
+    """
+    interval = 0.07  # flicker looks livelier at ~14 fps
+    _RAMP = ((80, 8, 0), (178, 34, 0), (255, 106, 0), (255, 200, 40))
+
+    def __call__(self, frac, elapsed, width, ascii=False, colour=None):  # noqa: B042
+        charset = Bar.ASCII if ascii else Bar.UTF
+        glyphs, filled = fill_glyphs(frac, width, charset)
+        step = int(elapsed / self.interval)
+        span = max(filled, 1)
+        if self.tier:
+            cells = []
+            for i, ch in enumerate(glyphs):
+                if ch == charset[0]:  # unfilled
+                    cells.append((ch, None))
+                else:
+                    t = min(i / span, 1.0)
+                    j = min(int(t * 3), 2)
+                    rgb = blend(self._RAMP[j], self._RAMP[j + 1], t * 3 - j)
+                    d = span - i  # cells from the burning edge
+                    if d <= 3:  # flicker towards white-hot at the tip
+                        rgb = blend(rgb, (255, 240, 140),
+                                    noise(i, step) * (4 - d) / 4 * 0.7)
+                    cells.append((ch, rgb))
+            return compose(cells, self.tier)
+        if ascii or not filled:
+            return ''.join(glyphs)
+        for i in range(max(0, filled - 3), filled):  # monochrome flicker
+            if noise(i, step) > 0.5:
+                glyphs[i] = '▓▒'[int(noise(i + 7, step) * 1.999)]
+        return ''.join(glyphs)
+
+
 class TAnimator(Thread):
     """
     Daemon thread refreshing animated bars between iterations.

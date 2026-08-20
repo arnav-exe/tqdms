@@ -258,6 +258,16 @@ def test_rainbow():
     assert anim(0.5, 0, 10) == format(Bar(0.5, 10))
 
 
+def test_fire():
+    """Test flicker at the edge varies with time in colour and mono"""
+    anim = registry['fire']()
+    anim.tier = TRUECOLOUR
+    assert anim(0.7, 0.0, 30) != anim(0.7, 0.2, 30)
+    anim.tier = NOCOLOUR
+    frames = {anim(0.7, t * 0.07, 30) for t in range(8)}
+    assert len(frames) > 2
+
+
 def test_wave():
     """Test the wave style animates over time (colour and monochrome)"""
     anim = registry['wave']()
