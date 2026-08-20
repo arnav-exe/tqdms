@@ -355,8 +355,8 @@ class tqdm(Comparable):
     delay  : float, optional
         Don't display until [default: 0] seconds have elapsed.
     animation  : str, optional
-        Name of an animated bar style (e.g. 'wave', 'pulse',
-        'rainbow'). Requires `total`. Colours and glyphs degrade
+        Name of an animated bar style (e.g. 'wave', 'ocean',
+        'aurora'). Requires `total`. Colours and glyphs degrade
         automatically to match terminal support. See
         `tqdm.animations.Animation` for all styles [default: None].
     gui  : bool, optional
