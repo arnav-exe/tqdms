@@ -278,6 +278,17 @@ def test_spinner():
         assert anim(1, 0, 20, ascii=is_ascii) == anim(1, 5, 20, ascii=is_ascii)
 
 
+def test_comet():
+    """Test the comet bounces through the unfilled region"""
+    anim = registry['comet']()
+    anim.tier = NOCOLOUR
+    positions = {anim(0.3, t * 0.4, 30).index('●') for t in range(6)}
+    assert len(positions) > 3  # it moves
+    assert min(positions) >= 9  # never inside the fill
+    assert '#' not in anim(0.3, 0, 30, ascii=True)[10:]
+    assert 'O' in anim(0.3, 0, 30, ascii=True)
+
+
 def test_wave():
     """Test the wave style animates over time (colour and monochrome)"""
     anim = registry['wave']()
