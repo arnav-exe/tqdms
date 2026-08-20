@@ -237,6 +237,16 @@ def test_shimmer():
     assert len(frames) > 3
 
 
+def test_pulse():
+    """Test breathing brightness varies with time and speeds up"""
+    anim = registry['pulse']()
+    anim.tier = TRUECOLOUR
+    assert anim(0.5, 0.1, 30) != anim(0.5, 0.4, 30)
+    anim.tier = NOCOLOUR  # breathing edge cell
+    frames = {anim(0.5, t / 5, 30) for t in range(10)}
+    assert len(frames) > 1
+
+
 def test_wave():
     """Test the wave style animates over time (colour and monochrome)"""
     anim = registry['wave']()

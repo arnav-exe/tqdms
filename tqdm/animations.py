@@ -321,6 +321,34 @@ class Shimmer(BarAnimation):
             for i, ch in enumerate(glyphs))
 
 
+@register('pulse')
+class Pulse(BarAnimation):
+    """
+    Whole-fill brightness breathing at ~1.1-1.25 Hz.
+
+    Pulse frequency rises slightly with progress: increasing-frequency
+    pulsation is the empirically preferred variant (Harrison et al.,
+    CHI 2010). Monochrome unicode gets a breathing edge cell; ascii
+    output stays static.
+    """
+    base = (36, 142, 232)
+
+    def __call__(self, frac, elapsed, width, ascii=False, colour=None):  # noqa: B042
+        charset = Bar.ASCII if ascii else Bar.UTF
+        glyphs, filled = fill_glyphs(frac, width, charset)
+        w = wave01(elapsed * (1.1 + 0.15 * frac))
+        if self.tier:
+            base = base_rgb(colour, self.base)
+            shade = blend(blend(base, (0, 0, 0), 0.25),
+                          blend(base, (255, 255, 255), 0.35), w)
+            cells = [(ch, None if ch == charset[0] else shade) for ch in glyphs]
+            return compose(cells, self.tier)
+        if ascii or not filled:
+            return ''.join(glyphs)
+        glyphs[filled - 1] = '█▓▒'[int(w * 2.999)]  # breathing edge cell
+        return ''.join(glyphs)
+
+
 class TAnimator(Thread):
     """
     Daemon thread refreshing animated bars between iterations.
