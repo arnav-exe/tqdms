@@ -247,6 +247,17 @@ def test_pulse():
     assert len(frames) > 1
 
 
+def test_rainbow():
+    """Test many hues at truecolour, plain bar when monochrome"""
+    anim = registry['rainbow']()
+    anim.tier = TRUECOLOUR
+    res = anim(1, 0, 30)
+    assert len(set(RE_ANSI.findall(res))) > 8  # many distinct colours
+    assert anim(1, 0, 30) != anim(1, 0.9, 30)
+    anim.tier = NOCOLOUR
+    assert anim(0.5, 0, 10) == format(Bar(0.5, 10))
+
+
 def test_wave():
     """Test the wave style animates over time (colour and monochrome)"""
     anim = registry['wave']()

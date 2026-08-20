@@ -14,6 +14,7 @@ import atexit
 import os
 import re
 import sys
+from colorsys import hsv_to_rgb
 from enum import Enum
 from math import cos, pi
 from threading import Event, Lock, Thread
@@ -347,6 +348,33 @@ class Pulse(BarAnimation):
             return ''.join(glyphs)
         glyphs[filled - 1] = '█▓▒'[int(w * 2.999)]  # breathing edge cell
         return ''.join(glyphs)
+
+
+@register('rainbow')
+class Rainbow(BarAnimation):
+    """
+    Hue-cycling colours flowing backwards along the filled region.
+
+    Needs colour support to mean anything: monochrome output is a
+    plain bar.
+    """
+    period = 3.0   # seconds per full hue rotation
+    stretch = 1.2  # hue rotations across the bar width
+
+    def __call__(self, frac, elapsed, width, ascii=False, colour=None):  # noqa: B042
+        charset = Bar.ASCII if ascii else Bar.UTF
+        glyphs, _ = fill_glyphs(frac, width, charset)
+        if not self.tier:
+            return ''.join(glyphs)
+        cells = []
+        for i, ch in enumerate(glyphs):
+            if ch == charset[0]:  # unfilled
+                cells.append((ch, None))
+            else:
+                h = (i * self.stretch / width + elapsed / self.period) % 1
+                cells.append(
+                    (ch, tuple(int(c * 255) for c in hsv_to_rgb(h, 0.85, 1))))
+        return compose(cells, self.tier)
 
 
 class TAnimator(Thread):
