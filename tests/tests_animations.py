@@ -258,17 +258,6 @@ def test_fire():
     assert len(frames) > 2
 
 
-def test_comet():
-    """Test the comet bounces through the unfilled region"""
-    anim = registry['comet']()
-    anim.tier = NOCOLOUR
-    positions = {anim(0.3, t * 0.4, 30).index('●') for t in range(6)}
-    assert len(positions) > 3  # it moves
-    assert min(positions) >= 9  # never inside the fill
-    assert '#' not in anim(0.3, 0, 30, ascii=True)[10:]
-    assert 'O' in anim(0.3, 0, 30, ascii=True)
-
-
 def test_ripple():
     """Test the unfilled region undulates while the fill stays put"""
     anim = registry['ripple']()

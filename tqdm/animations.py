@@ -16,7 +16,7 @@ import re
 import sys
 from colorsys import hsv_to_rgb
 from enum import Enum
-from math import cos, pi, sin
+from math import cos, pi
 from threading import Event, Lock, Thread
 from time import time
 from warnings import warn
@@ -387,49 +387,6 @@ class Fire(BarAnimation):
             if noise(i, step) > 0.5:
                 glyphs[i] = '▓▒'[int(noise(i + 7, step) * 1.999)]
         return ''.join(glyphs)
-
-
-@register('comet')
-class Comet(BarAnimation):
-    """
-    A comet bouncing through the unfilled region, trail fading behind.
-
-    The fill stays a clean, static readout; the remaining space
-    carries the ambient motion (and shrinks as work completes). Fully
-    glyph-based with an ascii variant.
-    """
-    period = 2.6  # seconds per bounce cycle
-
-    def __call__(self, frac, elapsed, width, ascii=False, colour=None):  # noqa: B042
-        charset = Bar.ASCII if ascii else Bar.UTF
-        glyphs, filled = fill_glyphs(frac, width, charset)
-        start = filled + 1  # first cell past the partial edge
-        span = width - start
-        comet = {}
-        if span >= 3:
-            head, trail = ('O', 'o.') if ascii else ('●', '•·')
-            u = elapsed % self.period / self.period
-            x = start + int(round(wave01(u) * (span - 1)))  # smooth bounce
-            dirn = 1 if sin(2 * pi * u) >= 0 else -1
-            for k, (ch, rgb) in enumerate(((head, (255, 214, 90)),
-                                           (trail[0], (215, 150, 60)),
-                                           (trail[1], (150, 100, 45)))):
-                j = x - k * dirn  # trail behind the direction of travel
-                if start <= j < width:
-                    glyphs[j] = ch
-                    comet[j] = rgb
-        if not self.tier:
-            return ''.join(glyphs)
-        fill_rgb = base_rgb(colour, None) if colour else None
-        cells = []
-        for i, ch in enumerate(glyphs):
-            if i in comet:
-                cells.append((ch, comet[i]))
-            elif i <= filled and ch != charset[0]:
-                cells.append((ch, fill_rgb))
-            else:
-                cells.append((ch, None))
-        return compose(cells, self.tier)
 
 
 @register('ripple')
