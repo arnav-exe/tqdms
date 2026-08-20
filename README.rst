@@ -1,5 +1,12 @@
 |Logo|
 
+tqdms
+=====
+
+tqdm but with a bit of joy and whimsy
+
+who doesnt love terminal animations
+
 tqdm
 ====
 
