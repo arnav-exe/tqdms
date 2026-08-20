@@ -289,6 +289,16 @@ def test_comet():
     assert 'O' in anim(0.3, 0, 30, ascii=True)
 
 
+def test_ripple():
+    """Test the unfilled region undulates while the fill stays put"""
+    anim = registry['ripple']()
+    anim.tier = NOCOLOUR
+    a, b = anim(0.5, 0.0, 30), anim(0.5, 0.4, 30)
+    assert a != b
+    assert a[:15] == b[:15]  # fill untouched
+    assert set(anim(0.5, 0.2, 30, ascii=True)[16:]) <= set(' .:')
+
+
 def test_wave():
     """Test the wave style animates over time (colour and monochrome)"""
     anim = registry['wave']()
