@@ -511,6 +511,35 @@ class Ripple(BarAnimation):
         return res
 
 
+@register('pacman')
+class Pacman(BarAnimation):
+    """
+    The classic ILoveCandy easter egg: progress eats a trail of candy.
+
+    A chomping mouth rides the boundary with candy dots ahead and
+    emptiness behind; the mouth position is the progress fraction
+    (a la pacman's decade-old namesake option). Works everywhere:
+    plain ascii glyphs, coloured when the terminal allows.
+    """
+    interval = 0.12
+
+    def __call__(self, frac, elapsed, width, ascii=False, colour=None):  # noqa: B042
+        pos = min(int(frac * width), width - 1)
+        mouth = 'Cc'[int(elapsed / 0.25) % 2]
+        dot = 'o' if ascii else '·'
+        cells = []
+        for i in range(width):
+            if i == pos:
+                cells.append((mouth, (255, 210, 0)))
+            elif i > pos and i % 2 == 0:  # uneaten candy on a fixed grid
+                cells.append((dot, (222, 222, 222)))
+            else:
+                cells.append((' ', None))
+        if self.tier:
+            return compose(cells, self.tier)
+        return ''.join(ch for ch, _ in cells)
+
+
 class TAnimator(Thread):
     """
     Daemon thread refreshing animated bars between iterations.

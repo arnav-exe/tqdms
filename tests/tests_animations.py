@@ -299,6 +299,17 @@ def test_ripple():
     assert set(anim(0.5, 0.2, 30, ascii=True)[16:]) <= set(' .:')
 
 
+def test_pacman():
+    """Test chomping mouth position tracks the fraction"""
+    anim = registry['pacman']()
+    anim.tier = NOCOLOUR
+    res = anim(0.5, 0.0, 20, ascii=True)
+    assert res.index('C') == 10
+    assert 'o' in res[11:] and 'o' not in res[:10]  # candy only ahead
+    assert 'c' in anim(0.5, 0.3, 20, ascii=True)  # mouth chomps
+    assert anim(1, 0.0, 20, ascii=True).index('C') == 19
+
+
 def test_wave():
     """Test the wave style animates over time (colour and monochrome)"""
     anim = registry['wave']()
