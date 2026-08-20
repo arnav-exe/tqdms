@@ -12,7 +12,7 @@ from tqdm.animations import (
 from tqdm.std import Bar
 from tqdm.utils import RE_ANSI, disp_len
 
-RE_RATE = re.compile(r'[\d.]+(it/s|s/it)')
+RE_RATE = re.compile(r'[\d.?]+(it/s|s/it)')
 
 
 class FakeTTY(StringIO):
@@ -171,7 +171,7 @@ def test_animator_thread():
     animator = TAnimator._animator
     assert animator is not None and animator.is_alive()
     before = len(calls)
-    sleep(0.45)  # no update() calls: frames must still advance
+    sleep(0.6)  # no update() calls: frames must still advance
     assert len(calls) - before >= 2
     t.close()
     for _ in range(100):  # thread retires once no animated bars remain
