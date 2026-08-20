@@ -170,6 +170,17 @@ def base_rgb(colour, default):
     return default
 
 
+def fill_glyphs(frac, width, charset):
+    """glyphs (list of `width` chars) of a `frac`-filled bar, and full-cell count"""
+    nsyms = len(charset) - 1
+    filled, part = divmod(int(frac * width * nsyms), nsyms)
+    res = [charset[-1]] * filled
+    if filled < width:
+        res.append(charset[part])
+        res.extend([charset[0]] * (width - filled - 1))
+    return res, filled
+
+
 class BarAnimation:
     """
     Base class for animated bar styles.
@@ -233,6 +244,43 @@ class AnimatedBar(Bar):
             return super()._paint(N_BARS, charset)
         return self.animation(self.frac, self.elapsed, N_BARS,
                               ascii=_is_ascii(charset), colour=self.colour)
+
+
+@register('wave')
+class Wave(BarAnimation):
+    """
+    Brightness wave rolling backwards along the filled region.
+
+    Backwards texture motion makes waits feel measurably shorter
+    (Harrison et al., CHI 2010). Monochrome terminals get a subtle
+    shade-glyph wave instead; ascii output stays static.
+    """
+    period = 1.6      # seconds per wavelength
+    wavelength = 14   # cells
+    base = (16, 170, 120)
+
+    def __call__(self, frac, elapsed, width, ascii=False, colour=None):  # noqa: B042
+        charset = Bar.ASCII if ascii else Bar.UTF
+        glyphs, filled = fill_glyphs(frac, width, charset)
+        phase = elapsed / self.period
+        if self.tier:
+            base = base_rgb(colour, self.base)
+            dim = blend(base, (0, 0, 0), 0.35)
+            bright = blend(base, (255, 255, 255), 0.4)
+            cells = []
+            for i, ch in enumerate(glyphs):
+                if ch == charset[0]:  # unfilled
+                    cells.append((ch, None))
+                else:
+                    w = wave01(i / self.wavelength + phase)
+                    cells.append((ch, blend(dim, bright, w)))
+            return compose(cells, self.tier)
+        if ascii:
+            return ''.join(glyphs)  # static: no colour, no safe glyph motion
+        shades = '▒▓█'  # monochrome: shade-glyph wave
+        return ''.join(
+            shades[int(wave01(i / self.wavelength + phase) * 2.999)]
+            if i < filled else ch for i, ch in enumerate(glyphs))
 
 
 class TAnimator(Thread):

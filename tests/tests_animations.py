@@ -1,15 +1,16 @@
-"""Tests for `tqdm.animations` core plumbing."""
+"""Tests for `tqdm.animations` core plumbing and styles."""
 import re
 from io import StringIO
 from time import sleep
 
-from pytest import warns
+from pytest import mark, warns
 
 from tqdm import TqdmWarning, tqdm
 from tqdm.animations import (
     C16, C256, NOCOLOUR, TRUECOLOUR, AnimatedBar, BarAnimation, TAnimator, base_rgb, blend,
     colour_tier, compose, noise, registry, resolve, sweep, wave01)
 from tqdm.std import Bar
+from tqdm.utils import RE_ANSI, disp_len
 
 RE_RATE = re.compile(r'[\d.]+(it/s|s/it)')
 
@@ -151,7 +152,8 @@ def test_no_animation_output_unchanged():
         out = StringIO()
         with tqdm(total=10, file=out, mininterval=0, **kwargs) as t:
             t.update(5)
-        outs.append(RE_RATE.sub('R', out.getvalue()))
+        # rates (and the padding overwriting them) are timing-dependent
+        outs.append(re.sub(' +', ' ', RE_RATE.sub('R', out.getvalue())))
     assert outs[0] == outs[1]
 
 
@@ -186,3 +188,49 @@ def test_animator_respects_delay():
     sleep(0.35)
     t.close()
     assert out.getvalue() == ''
+
+
+@mark.parametrize("name", sorted(registry))
+def test_animation_invariants(name):
+    """Test every style renders exact width at all tiers/fracs/times"""
+    anim = registry[name]()
+    for tier in (NOCOLOUR, C16, C256, TRUECOLOUR):
+        anim.tier = tier
+        for is_ascii in (False, True):
+            for frac in (0, 0.01, 1 / 3, 0.5, 0.97, 1):
+                for elapsed in (0, 0.05, 0.13, 1.7, 33.3, 12345.6):
+                    for width in (1, 2, 3, 10, 47):
+                        res = anim(frac, elapsed, width, ascii=is_ascii)
+                        ctx = (name, tier, is_ascii, frac, elapsed, width, res)
+                        assert disp_len(res) == width, ctx
+                        assert '\n' not in res and '\r' not in res, ctx
+                        if is_ascii:
+                            assert all(ord(c) < 256
+                                       for c in RE_ANSI.sub('', res)), ctx
+                        if tier == NOCOLOUR:
+                            assert '\x1b' not in res, ctx
+                        else:
+                            escapes = RE_ANSI.findall(res)
+                            if escapes:  # no colour state may leak out
+                                assert escapes[-1] == Bar.COLOUR_RESET, ctx
+
+
+@mark.parametrize("name", sorted(registry))
+def test_animation_in_tqdm(name):
+    """Test every style through a real bar without errors"""
+    out = StringIO()
+    with tqdm(total=10, file=out, animation=name, mininterval=0, ncols=60) as t:
+        for _ in range(10):
+            t.update()
+    assert '10/10' in out.getvalue()
+
+
+def test_wave():
+    """Test the wave style animates over time (colour and monochrome)"""
+    anim = registry['wave']()
+    for tier in (TRUECOLOUR, C16):
+        anim.tier = tier
+        assert anim(0.5, 0.0, 30) != anim(0.5, 0.4, 30)
+    anim.tier = NOCOLOUR
+    assert anim(0.5, 0.0, 30) != anim(0.5, 0.4, 30)  # shade-glyph wave
+    assert anim(0.5, 0.0, 30, ascii=True) == anim(0.5, 0.4, 30, ascii=True)
