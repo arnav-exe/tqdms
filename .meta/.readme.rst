@@ -1,5 +1,12 @@
 |Logo|
 
+tqdms
+=====
+
+tqdm but with a bit of joy and whimsy
+
+who doesnt love terminal animations
+
 tqdm
 ====
 
@@ -612,8 +619,8 @@ environment variable):
     for _ in tqdm(range(100), animation=Animation.PACMAN):
         ...
 
-Available styles: ``wave``, ``shimmer``, ``pulse``, ``rainbow``,
-``fire``, ``spinner``, ``ripple``, ``comet`` and ``pacman``.
+Available styles: ``wave``, ``shimmer``, ``rainbow``, ``fire``,
+``ocean``, ``aurora`` and ``pacman``.
 Stats (rate, ETA, ``postfix``, etc.) are unaffected, and a background
 thread keeps the animation moving even between slow iterations.
 Colours and glyphs degrade automatically (truecolour, 256, 16, plain;

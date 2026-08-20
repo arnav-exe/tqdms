@@ -7,8 +7,8 @@ from pytest import mark, warns
 
 from tqdm import TqdmWarning, tqdm
 from tqdm.animations import (
-    C16, C256, NOCOLOUR, TRUECOLOUR, AnimatedBar, BarAnimation, TAnimator, base_rgb, blend,
-    colour_tier, compose, noise, registry, resolve, sweep, wave01)
+    C16, C256, NOCOLOUR, RE_RGB, TRUECOLOUR, AnimatedBar, BarAnimation, TAnimator, base_rgb, blend,
+    colour_tier, compose, noise, ramp, registry, resolve, sweep, swell, wave01)
 from tqdm.std import Bar
 from tqdm.utils import RE_ANSI, disp_len
 
@@ -95,6 +95,10 @@ def test_helpers():
     vals = {noise(i, s) for i in range(9) for s in range(9)}
     assert all(0 <= v < 1 for v in vals) and len(vals) > 70  # deterministic spread
     assert noise(3, 7) == noise(3, 7)
+    assert swell(0) < 1e-9 and abs(swell(0.35) - 1) < 1e-9  # peak at `rise`
+    assert swell(0.9) < swell(0.5)  # fast attack, slow fall
+    assert ramp(((0, 0, 0), (100, 200, 50)), 0.5) == (50, 100, 25)
+    assert ramp(((0, 0, 0), (8, 8, 8), (100, 200, 50)), 1) == (100, 200, 50)
 
 
 def test_base_rgb():
@@ -237,16 +241,6 @@ def test_shimmer():
     assert len(frames) > 3
 
 
-def test_pulse():
-    """Test breathing brightness varies with time and speeds up"""
-    anim = registry['pulse']()
-    anim.tier = TRUECOLOUR
-    assert anim(0.5, 0.1, 30) != anim(0.5, 0.4, 30)
-    anim.tier = NOCOLOUR  # breathing edge cell
-    frames = {anim(0.5, t / 5, 30) for t in range(10)}
-    assert len(frames) > 1
-
-
 def test_rainbow():
     """Test many hues at truecolour, plain bar when monochrome"""
     anim = registry['rainbow']()
@@ -268,35 +262,32 @@ def test_fire():
     assert len(frames) > 2
 
 
-def test_spinner():
-    """Test the rotor spins at every tier, and rests at 100%"""
-    anim = registry['spinner']()
-    for tier, is_ascii in ((NOCOLOUR, False), (NOCOLOUR, True)):
-        anim.tier = tier
-        frames = {anim(0.5, t * 0.08, 20, ascii=is_ascii) for t in range(4)}
-        assert len(frames) == 4
-        assert anim(1, 0, 20, ascii=is_ascii) == anim(1, 5, 20, ascii=is_ascii)
-
-
-def test_comet():
-    """Test the comet bounces through the unfilled region"""
-    anim = registry['comet']()
+def test_ocean():
+    """Test layered swells, sun glints and the lapping shoreline"""
+    anim = registry['ocean']()
+    anim.tier = TRUECOLOUR
+    assert anim(0.6, 0.0, 30) != anim(0.6, 0.4, 30)
+    rgbs = {m for t in range(40) for m in RE_RGB.findall(anim(1, t * 0.1, 30))}
+    assert any(int(r) > 200 for r, _, _ in rgbs)  # foam glints appear
+    assert RE_ANSI.sub('', anim(0, 0.5, 30))[0] == '·'  # lapping from 0%
     anim.tier = NOCOLOUR
-    positions = {anim(0.3, t * 0.4, 30).index('●') for t in range(6)}
-    assert len(positions) > 3  # it moves
-    assert min(positions) >= 9  # never inside the fill
-    assert '#' not in anim(0.3, 0, 30, ascii=True)[10:]
-    assert 'O' in anim(0.3, 0, 30, ascii=True)
+    frames = {anim(1, t * 0.1, 30) for t in range(40)}
+    assert len(frames) > 2  # mono foam flecks come and go
+    assert set(''.join(frames)) <= {'█', '▒'}
+    assert anim(0.5, 0.0, 30, ascii=True) == anim(0.5, 0.7, 30, ascii=True)
 
 
-def test_ripple():
-    """Test the unfilled region undulates while the fill stays put"""
-    anim = registry['ripple']()
+def test_aurora():
+    """Test slow drifting curtains in colour and monochrome"""
+    anim = registry['aurora']()
+    anim.tier = TRUECOLOUR
+    assert anim(1, 0.0, 30) != anim(1, 1.0, 30)
+    assert len(set(RE_ANSI.findall(anim(1, 0, 30)))) > 4  # many hues
     anim.tier = NOCOLOUR
-    a, b = anim(0.5, 0.0, 30), anim(0.5, 0.4, 30)
-    assert a != b
-    assert a[:15] == b[:15]  # fill untouched
-    assert set(anim(0.5, 0.2, 30, ascii=True)[16:]) <= set(' .:')
+    a, b = anim(1, 0.0, 30), anim(1, 5.0, 30)
+    assert a != b and set(a) <= {'█', '▓'}  # two-shade drift
+    assert anim(0.5, 0.0, 30)[15:] == ' ' * 15  # unfilled untouched
+    assert anim(0.5, 0.0, 30, ascii=True) == anim(0.5, 3.0, 30, ascii=True)
 
 
 def test_pacman():

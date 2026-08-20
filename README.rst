@@ -491,8 +491,8 @@ Parameters
 * delay  : float, optional  
     Don't display until [default: 0] seconds have elapsed.
 * animation  : str, optional  
-    Name of an animated bar style (e.g. 'wave', 'pulse',
-    'rainbow'). Requires ``total``. Colours and glyphs degrade
+    Name of an animated bar style (e.g. 'wave', 'ocean',
+    'aurora'). Requires ``total``. Colours and glyphs degrade
     automatically to match terminal support. See
     ``tqdm.animations.Animation`` for all styles [default: None].
 
@@ -841,8 +841,8 @@ environment variable):
     for _ in tqdm(range(100), animation=Animation.PACMAN):
         ...
 
-Available styles: ``wave``, ``shimmer``, ``pulse``, ``rainbow``,
-``fire``, ``spinner``, ``ripple``, ``comet`` and ``pacman``.
+Available styles: ``wave``, ``shimmer``, ``rainbow``, ``fire``,
+``ocean``, ``aurora`` and ``pacman``.
 Stats (rate, ETA, ``postfix``, etc.) are unaffected, and a background
 thread keeps the animation moving even between slow iterations.
 Colours and glyphs degrade automatically (truecolour, 256, 16, plain;

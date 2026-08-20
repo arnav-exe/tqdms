@@ -184,6 +184,13 @@ Bar colour (e.g.\ `green', `#00ff00').
 float, optional.
 Don\(cqt display until [default: 0] seconds have elapsed.
 .TP
+\-\-animation=\f[I]animation\f[R]
+str, optional.
+Name of an animated bar style (e.g.\ `wave', `ocean', `aurora').
+Requires \f[CR]total\f[R].
+Colours and glyphs degrade automatically to match terminal support.
+See \f[CR]tqdm.animations.Animation\f[R] for all styles [default: None].
+.TP
 \-\-delim=\f[I]delim\f[R]
 chr, optional.
 Delimiting character [default: `\(rsn'].

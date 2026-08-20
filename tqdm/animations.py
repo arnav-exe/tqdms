@@ -16,7 +16,7 @@ import re
 import sys
 from colorsys import hsv_to_rgb
 from enum import Enum
-from math import cos, pi, sin
+from math import cos, pi
 from threading import Event, Lock, Thread
 from time import time
 from warnings import warn
@@ -157,6 +157,26 @@ def noise(i, step):
     n = (i * 2654435761 + step * 40503) & 0xffffffff
     n = ((n ^ (n >> 13)) * 1274126177) & 0xffffffff
     return (n >> 8) / 16777216.0
+
+
+def swell(x, rise=0.35):
+    """
+    Asymmetric 0 -> 1 -> 0 envelope over phase `x` (cycles).
+
+    Fast smooth rise (peaking at `rise`), slow smooth fall: the
+    attack/decay asymmetry of natural light events (glints, embers).
+    """
+    u = x % 1
+    if u < rise:
+        return 0.5 - 0.5 * cos(pi * u / rise)
+    return 0.5 + 0.5 * cos(pi * (u - rise) / (1 - rise))
+
+
+def ramp(stops, t):
+    """linear interpolation through a sequence of rgb `stops`, `t` in [0, 1]"""
+    t = min(max(t, 0.0), 1.0) * (len(stops) - 1)
+    j = min(int(t), len(stops) - 2)
+    return blend(stops[j], stops[j + 1], t - j)
 
 
 def base_rgb(colour, default):
@@ -322,34 +342,6 @@ class Shimmer(BarAnimation):
             for i, ch in enumerate(glyphs))
 
 
-@register('pulse')
-class Pulse(BarAnimation):
-    """
-    Whole-fill brightness breathing at ~1.1-1.25 Hz.
-
-    Pulse frequency rises slightly with progress: increasing-frequency
-    pulsation is the empirically preferred variant (Harrison et al.,
-    CHI 2010). Monochrome unicode gets a breathing edge cell; ascii
-    output stays static.
-    """
-    base = (36, 142, 232)
-
-    def __call__(self, frac, elapsed, width, ascii=False, colour=None):  # noqa: B042
-        charset = Bar.ASCII if ascii else Bar.UTF
-        glyphs, filled = fill_glyphs(frac, width, charset)
-        w = wave01(elapsed * (1.1 + 0.15 * frac))
-        if self.tier:
-            base = base_rgb(colour, self.base)
-            shade = blend(blend(base, (0, 0, 0), 0.25),
-                          blend(base, (255, 255, 255), 0.35), w)
-            cells = [(ch, None if ch == charset[0] else shade) for ch in glyphs]
-            return compose(cells, self.tier)
-        if ascii or not filled:
-            return ''.join(glyphs)
-        glyphs[filled - 1] = '█▓▒'[int(w * 2.999)]  # breathing edge cell
-        return ''.join(glyphs)
-
-
 @register('rainbow')
 class Rainbow(BarAnimation):
     """
@@ -417,98 +409,95 @@ class Fire(BarAnimation):
         return ''.join(glyphs)
 
 
-@register('spinner')
-class Spinner(BarAnimation):
+@register('ocean')
+class Ocean(BarAnimation):
     """
-    Rotor spinning on the leading edge of the fill.
+    Deep water: layered swells with sunlight glinting off the fill.
 
-    The classic braille activity rotor (a la cli-spinners "dots"),
-    fully glyph-based: animates on any terminal, `|/-\\` in ascii.
+    Two backwards-travelling swells at incommensurate periods (real
+    swell arrives every 8-12s; coprime layering keeps the loop from
+    ever visibly repeating) over a depth gradient, plus sparse
+    foam-white glints - the statistics of real sun-glitter (Cox &
+    Munk 1954), denser as the bar nears done. The shoreline cell laps
+    gently so the bar is alive from the first frame. Monochrome
+    unicode gets sparse shade-glyph flecks; ascii output stays static.
     """
-    interval = 0.08
-    FRAMES = '⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
-    FRAMES_ASCII = '|/-\\'
+    glint_life = 0.35  # seconds per glint (fast attack, slow fade)
+    DEEP, CREST, FOAM = (8, 64, 112), (56, 160, 190), (225, 245, 250)
 
     def __call__(self, frac, elapsed, width, ascii=False, colour=None):  # noqa: B042
         charset = Bar.ASCII if ascii else Bar.UTF
         glyphs, filled = fill_glyphs(frac, width, charset)
-        if frac < 1 and filled < width:  # rotor rides the edge cell
-            frames = self.FRAMES_ASCII if ascii else self.FRAMES
-            glyphs[filled] = frames[int(elapsed / self.interval) % len(frames)]
-        res = ''.join(glyphs)
-        if self.tier and colour:
-            return colour + res + Bar.COLOUR_RESET
-        return res
-
-
-@register('comet')
-class Comet(BarAnimation):
-    """
-    A comet bouncing through the unfilled region, trail fading behind.
-
-    The fill stays a clean, static readout; the remaining space
-    carries the ambient motion (and shrinks as work completes). Fully
-    glyph-based with an ascii variant.
-    """
-    period = 2.6  # seconds per bounce cycle
-
-    def __call__(self, frac, elapsed, width, ascii=False, colour=None):  # noqa: B042
-        charset = Bar.ASCII if ascii else Bar.UTF
-        glyphs, filled = fill_glyphs(frac, width, charset)
-        start = filled + 1  # first cell past the partial edge
-        span = width - start
-        comet = {}
-        if span >= 3:
-            head, trail = ('O', 'o.') if ascii else ('●', '•·')
-            u = elapsed % self.period / self.period
-            x = start + int(round(wave01(u) * (span - 1)))  # smooth bounce
-            dirn = 1 if sin(2 * pi * u) >= 0 else -1
-            for k, (ch, rgb) in enumerate(((head, (255, 214, 90)),
-                                           (trail[0], (215, 150, 60)),
-                                           (trail[1], (150, 100, 45)))):
-                j = x - k * dirn  # trail behind the direction of travel
-                if start <= j < width:
-                    glyphs[j] = ch
-                    comet[j] = rgb
-        if not self.tier:
+        lap = min(filled, width - 1)
+        if glyphs[lap] == charset[0] and lap:
+            lap -= 1  # shoreline sits on the last painted cell
+        if self.tier:
+            thresh = 0.97 - 0.03 * frac  # glints gather towards done
+            cells = []
+            for i, ch in enumerate(glyphs):
+                if ch == charset[0] and i != lap:
+                    cells.append((ch, None))
+                    continue
+                w = (0.6 * wave01(i / 17 + elapsed / 8.5)
+                     + 0.4 * wave01(i / 6.1 + elapsed / 3.7))
+                rgb = blend(self.DEEP, self.CREST, w)
+                if i == lap:  # water lapping at the leading edge
+                    rgb = blend(rgb, self.FOAM,
+                                0.35 * swell(elapsed / 2.6, 0.45))
+                    if ch == charset[0]:
+                        ch = '·' if not ascii else '.'
+                ph = elapsed / self.glint_life + 7.9 * noise(i, -1)
+                if noise(i, int(ph)) > thresh:  # sun glint
+                    rgb = blend(rgb, self.FOAM, swell(ph, 0.3))
+                cells.append((ch, rgb))
+            return compose(cells, self.tier)
+        if ascii:
             return ''.join(glyphs)
-        fill_rgb = base_rgb(colour, None) if colour else None
+        for i in range(filled):  # monochrome: sparse foam flecks
+            ph = elapsed / self.glint_life + 7.9 * noise(i, -1)
+            if noise(i, int(ph)) > 0.95 and swell(ph, 0.3) > 0.45:
+                glyphs[i] = '▒'
+        return ''.join(glyphs)
+
+
+@register('aurora')
+class Aurora(BarAnimation):
+    """
+    Slow curtains of northern-lights colour drifting over the fill.
+
+    Auroral emission colours (oxygen green flanked by teal and the
+    violet N2+ fringe) drift backwards in two incommensurate layers,
+    everything under ~0.2 Hz: the effortless-attention register that
+    makes real aurora (and clouds, and embers) restorative to watch
+    (Kaplan's soft fascination). Monochrome unicode gets a subtle
+    two-shade drift; ascii output stays static.
+    """
+    interval = 0.12
+    TEAL, GREEN, VIOLET = (45, 185, 165), (70, 225, 130), (155, 85, 205)
+    DIM = (18, 60, 45)  # night-sky floor beneath the curtains
+
+    def __call__(self, frac, elapsed, width, ascii=False, colour=None):  # noqa: B042
+        charset = Bar.ASCII if ascii else Bar.UTF
+        glyphs, filled = fill_glyphs(frac, width, charset)
+        if not self.tier:
+            if ascii:
+                return ''.join(glyphs)
+            for i in range(filled):  # monochrome: two-shade drift
+                if (0.55 * wave01(i / 11 + elapsed / 9.1)
+                        + 0.45 * wave01(i / 23 + elapsed / 13.7)) < 0.4:
+                    glyphs[i] = '▓'
+            return ''.join(glyphs)
         cells = []
         for i, ch in enumerate(glyphs):
-            if i in comet:
-                cells.append((ch, comet[i]))
-            elif i <= filled and ch != charset[0]:
-                cells.append((ch, fill_rgb))
-            else:
+            if ch == charset[0]:
                 cells.append((ch, None))
+                continue
+            curtain = (0.55 * wave01(i / 11 + elapsed / 9.1)
+                       + 0.45 * wave01(i / 23 + elapsed / 13.7))
+            hue = ramp((self.TEAL, self.GREEN, self.VIOLET),
+                       wave01(i / 29 + elapsed / 21.3))
+            cells.append((ch, blend(self.DIM, hue, 0.25 + 0.75 * curtain)))
         return compose(cells, self.tier)
-
-
-@register('ripple')
-class Ripple(BarAnimation):
-    """
-    A low wave rippling backwards through the unfilled region.
-
-    Phase-offset oscillators per cell (a la alive-progress waves): the
-    fill stays static and readable while the remaining space undulates
-    along the baseline. Fully glyph-based with an ascii variant.
-    """
-    period = 1.5
-    wavelength = 7
-    RAMP = ' ▁▂'
-    RAMP_ASCII = ' .:'
-
-    def __call__(self, frac, elapsed, width, ascii=False, colour=None):  # noqa: B042
-        charset = Bar.ASCII if ascii else Bar.UTF
-        glyphs, filled = fill_glyphs(frac, width, charset)
-        ramp = self.RAMP_ASCII if ascii else self.RAMP
-        for i in range(filled + 1, width):
-            w = wave01(i / self.wavelength + elapsed / self.period)
-            glyphs[i] = ramp[int(w * 2.999)]
-        res = ''.join(glyphs)
-        if self.tier and colour:
-            return colour + res + Bar.COLOUR_RESET
-        return res
 
 
 @register('pacman')
