@@ -283,6 +283,44 @@ class Wave(BarAnimation):
             if i < filled else ch for i, ch in enumerate(glyphs))
 
 
+@register('shimmer')
+class Shimmer(BarAnimation):
+    """
+    Bright gleam sweeping backwards over the filled region.
+
+    The skeleton-screen effect: a leftward, decelerating highlight
+    band (the empirically preferred motion; Harrison et al., CHI
+    2010). Monochrome terminals get a shade-glyph gleam; ascii output
+    stays static.
+    """
+    period = 1.8  # seconds per sweep
+    band = 3.0    # gleam half-width in cells
+    base = (96, 126, 218)
+
+    def __call__(self, frac, elapsed, width, ascii=False, colour=None):  # noqa: B042
+        charset = Bar.ASCII if ascii else Bar.UTF
+        glyphs, filled = fill_glyphs(frac, width, charset)
+        span = max(filled, 1)
+        # travel beyond both ends so the gleam enters and leaves smoothly
+        x = sweep(elapsed, self.period) * (span + 2 * self.band) - self.band
+        if self.tier:
+            base = base_rgb(colour, self.base)
+            gleam = blend(base, (255, 255, 255), 0.8)
+            cells = []
+            for i, ch in enumerate(glyphs):
+                if ch == charset[0]:  # unfilled
+                    cells.append((ch, None))
+                else:
+                    g = max(0.0, 1 - abs(i - x) / self.band)  # soft falloff
+                    cells.append((ch, blend(base, gleam, g * g)))
+            return compose(cells, self.tier)
+        if ascii:
+            return ''.join(glyphs)
+        return ''.join(  # monochrome: shade-glyph gleam
+            '▓' if i < filled and abs(i - x) < self.band * 0.7 else ch
+            for i, ch in enumerate(glyphs))
+
+
 class TAnimator(Thread):
     """
     Daemon thread refreshing animated bars between iterations.

@@ -225,6 +225,18 @@ def test_animation_in_tqdm(name):
     assert '10/10' in out.getvalue()
 
 
+def test_shimmer():
+    """Test the gleam sweeps backwards (leftward) over the fill"""
+    anim = registry['shimmer']()
+    anim.tier = TRUECOLOUR
+    a = anim(1, 0.05, 30)
+    b = anim(1, 0.6, 30)
+    assert a != b
+    anim.tier = NOCOLOUR  # monochrome gleam still animates
+    frames = {anim(1, t / 10, 30) for t in range(12)}
+    assert len(frames) > 3
+
+
 def test_wave():
     """Test the wave style animates over time (colour and monochrome)"""
     anim = registry['wave']()
